@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+
+{% block title %}测试状态 - IPTV Web客户端{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-header">
+                <h2>频道测试状态</h2>
+            </div>
+            <div class="card-body">
+                <h4>
+                    {% if task.group == 'all' %}
+                        正在测试所有频道
+                    {% else %}
+                        正在测试 {{ task.group }} 分组的频道
+                    {% endif %}
+                </h4>
+                
+                <div class="progress mb-3">
+                    {% set progress_percent = (task.progress / task.total * 100) if task.total > 0 else 0 %}
+                    <div class="progress-bar progress-bar-striped progress-bar-animated" 
+                         role="progressbar" 
+                         style="width: {{ progress_percent }}%;" 
+                         aria-valuenow="{{ progress_percent }}" 
+                         aria-valuemin="0" 
+                         aria-valuemax="100">
+                        {{ progress_percent|int }}%
+                    </div>
+                </div>
+                
+                <p>
+                    状态: 
+                    {% if task.status == 'pending' %}
+                        <span class="badge bg-secondary">等待中</span>
+                    {% elif task.status == 'running' %}
+                        <span class="badge bg-primary">测试中</span>
+                    {% elif task.status == 'completed' %}
+                        <span class="badge bg-success">已完成</span>
+                    {% elif task.status == 'failed' %}
+                        <span class="badge bg-danger">失败</span>
+                    {% endif %}
+                </p>
+                
+                <p>已测试: {{ task.progress }} / {{ task.total }}</p>
+                
+                {% if task.status == 'running' or task.status == 'pending' %}
+                    <p>请稍候，测试正在进行中。此页面将每5秒自动刷新一次。</p>
+                    <div class="d-flex justify-content-between">
+                        <a href="{{ url_for('index') }}" class="btn btn-secondary">返回首页</a>
+                        <a href="{{ url_for('test_status', task_id=task_id) }}" class="btn btn-primary">手动刷新</a>
+                    </div>
+                {% else %}
+                    <div class="d-flex justify-content-between">
+                        <a href="{{ url_for('index') }}" class="btn btn-primary">返回首页</a>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    {% if task.status == 'running' or task.status == 'pending' %}
+    // 自动刷新页面
+    setTimeout(function() {
+        window.location.reload();
+    }, 5000);
+    {% endif %}
+</script>
+{% endblock %}

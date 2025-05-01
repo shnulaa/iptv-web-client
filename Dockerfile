@@ -18,9 +18,19 @@ RUN mkdir -p uploads
 ENV FLASK_APP=app.py
 ENV FLASK_ENV=production
 ENV PORT=12000
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
 
 # 暴露端口
 EXPOSE 12000
 
-# 启动应用
-CMD gunicorn --bind 0.0.0.0:$PORT app:app
+# 启动应用 - 针对小内存环境优化
+CMD gunicorn --bind 0.0.0.0:$PORT \
+    --workers=1 \
+    --threads=2 \
+    --worker-class=gthread \
+    --worker-tmp-dir=/dev/shm \
+    --timeout=120 \
+    --max-requests=1000 \
+    --max-requests-jitter=50 \
+    app:app

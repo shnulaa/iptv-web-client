@@ -13,6 +13,7 @@ import time
 import urllib.parse
 import base64
 import hashlib
+import gc
 from functools import wraps
 from flask import Flask, render_template, request, redirect, url_for, jsonify, session, flash, Response, stream_with_context
 from werkzeug.utils import secure_filename
@@ -49,24 +50,51 @@ def save_channels(channels):
     with open(CHANNELS_FILE, 'w', encoding='utf-8') as f:
         json.dump(channels, f, ensure_ascii=False, indent=2)
 
-def test_channel_url(url, timeout=5):
-    """测试频道URL是否可访问"""
+def test_channel_url(url, timeout=3):
+    """测试频道URL是否可访问 - 优化版本"""
     try:
-        # 对于m3u8文件，只请求头部信息
+        # 对于YouTube和Twitch链接，直接返回在线状态，避免请求
+        if 'youtube.com' in url or 'youtu.be' in url or 'twitch.tv' in url:
+            return {
+                'url': url,
+                'status': 'online',
+                'status_code': 200
+            }
+        
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         }
         
         # 使用HEAD请求检查URL是否可访问
-        response = requests.head(url, timeout=timeout, headers=headers, allow_redirects=True)
+        try:
+            response = requests.head(url, timeout=timeout, headers=headers, allow_redirects=True)
+            
+            # 如果HEAD请求成功，直接返回结果
+            if response.status_code < 400:
+                return {
+                    'url': url,
+                    'status': 'online',
+                    'status_code': response.status_code
+                }
+        except requests.RequestException:
+            # HEAD请求失败，尝试GET请求
+            pass
         
         # 如果HEAD请求失败，尝试GET请求
-        if response.status_code >= 400:
-            response = requests.get(url, timeout=timeout, headers=headers, stream=True)
-            # 只读取一小部分内容
-            for chunk in response.iter_content(chunk_size=1024):
+        session = requests.Session()
+        response = session.get(url, timeout=timeout, headers=headers, stream=True)
+        
+        # 只读取一小部分内容
+        try:
+            for chunk in response.iter_content(chunk_size=512):
                 if chunk:
                     break
+                # 只读取第一个块
+                break
+        finally:
+            # 确保关闭连接
+            response.close()
+            session.close()
         
         return {
             'url': url,
@@ -79,34 +107,68 @@ def test_channel_url(url, timeout=5):
             'status': 'error',
             'error': str(e)
         }
+    except Exception as e:
+        return {
+            'url': url,
+            'status': 'error',
+            'error': f"未知错误: {str(e)}"
+        }
 
-def test_channels_batch(channels, max_workers=10):
-    """批量测试多个频道URL"""
-    urls = [channel['url'] for channel in channels]
-    results = {}
+def test_channels_batch(channels, max_workers=5, task_id=None):
+    """批量测试多个频道URL，更加内存高效，并支持进度更新"""
+    global test_tasks
     
-    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-        future_to_url = {executor.submit(test_channel_url, url): url for url in urls}
-        for future in concurrent.futures.as_completed(future_to_url):
-            url = future_to_url[future]
-            try:
-                result = future.result()
-                results[url] = result
-            except Exception as e:
-                results[url] = {
-                    'url': url,
-                    'status': 'error',
-                    'error': str(e)
-                }
+    # 限制并发数，避免内存溢出
+    max_workers = min(max_workers, 5)
     
-    # 更新频道状态
+    # 创建一个副本，避免修改原始列表
+    channels_copy = []
     for channel in channels:
-        if channel['url'] in results:
-            channel['status'] = results[channel['url']]['status']
-            if 'status_code' in results[channel['url']]:
-                channel['status_code'] = results[channel['url']]['status_code']
-            if 'error' in results[channel['url']]:
-                channel['error'] = results[channel['url']]['error']
+        channels_copy.append({
+            'url': channel['url'],
+            'name': channel['name'],
+            'group': channel.get('group', '未分组')
+        })
+    
+    # 分批处理，每批最多50个频道
+    batch_size = 50
+    total_channels = len(channels_copy)
+    processed_count = 0
+    
+    for i in range(0, total_channels, batch_size):
+        batch = channels_copy[i:i+batch_size]
+        urls = [channel['url'] for channel in batch]
+        
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_url = {executor.submit(test_channel_url, url): url for url in urls}
+            for future in concurrent.futures.as_completed(future_to_url):
+                url = future_to_url[future]
+                try:
+                    result = future.result()
+                    # 直接更新频道状态，不存储中间结果
+                    for channel in channels:
+                        if channel['url'] == url:
+                            channel['status'] = result['status']
+                            if 'status_code' in result:
+                                channel['status_code'] = result['status_code']
+                            if 'error' in result:
+                                channel['error'] = result['error']
+                            break
+                except Exception as e:
+                    # 处理异常
+                    for channel in channels:
+                        if channel['url'] == url:
+                            channel['status'] = 'error'
+                            channel['error'] = str(e)
+                            break
+                
+                # 更新进度
+                processed_count += 1
+                if task_id and task_id in test_tasks:
+                    test_tasks[task_id]['progress'] = processed_count
+        
+        # 每批处理完后，释放内存
+        gc.collect()
     
     return channels
 
@@ -211,10 +273,67 @@ def index():
     
     return render_template('index.html', channels_by_group=channels_by_group, groups=groups, all_channels=channels)
 
+import threading
+
+# 全局变量，用于存储测试任务状态
+test_tasks = {}
+
+def background_test_channels(task_id, channels_to_test, selected_group):
+    """后台测试频道函数"""
+    global test_tasks
+    
+    # 更新任务状态为进行中
+    test_tasks[task_id]['status'] = 'running'
+    test_tasks[task_id]['progress'] = 0
+    test_tasks[task_id]['total'] = len(channels_to_test)
+    
+    try:
+        # 测试频道
+        start_time = time.time()
+        
+        # 获取所有频道
+        all_channels = load_channels()
+        
+        # 测试频道 - 传递task_id以更新进度
+        tested_channels = test_channels_batch(channels_to_test, max_workers=3, task_id=task_id)
+        end_time = time.time()
+        
+        # 保存更新后的频道列表
+        save_channels(all_channels)
+        
+        # 统计在线和离线频道数量
+        online_count = sum(1 for c in tested_channels if c.get('status') == 'online')
+        offline_count = sum(1 for c in tested_channels if c.get('status') == 'offline')
+        error_count = sum(1 for c in tested_channels if c.get('status') == 'error')
+        
+        # 计算测试耗时
+        test_time = end_time - start_time
+        
+        # 更新任务状态为完成
+        test_tasks[task_id]['status'] = 'completed'
+        test_tasks[task_id]['progress'] = len(channels_to_test)
+        test_tasks[task_id]['result'] = {
+            'time': test_time,
+            'online': online_count,
+            'offline': offline_count,
+            'error': error_count,
+            'group': selected_group
+        }
+        
+        # 释放内存
+        gc.collect()
+        
+    except Exception as e:
+        # 更新任务状态为失败
+        test_tasks[task_id]['status'] = 'failed'
+        test_tasks[task_id]['error'] = str(e)
+
 @app.route('/test_channels', methods=['GET', 'POST'])
 @login_required
 def test_channels_route():
     """测试频道是否可访问"""
+    global test_tasks
+    
     if request.method == 'POST':
         channels = load_channels()
         
@@ -235,43 +354,76 @@ def test_channels_route():
             flash('所选分组中没有频道可供测试', 'warning')
             return redirect(url_for('test_channels_route'))
         
-        flash(f'正在测试 {len(test_channels)} 个频道，这可能需要一些时间...', 'info')
+        # 创建任务ID
+        task_id = str(int(time.time()))
         
-        # 测试频道
-        start_time = time.time()
-        test_channels = test_channels_batch(test_channels)
-        end_time = time.time()
+        # 初始化任务状态
+        test_tasks[task_id] = {
+            'status': 'pending',
+            'progress': 0,
+            'total': len(test_channels),
+            'start_time': time.time(),
+            'group': selected_group
+        }
         
-        # 更新原始频道列表中的状态
-        for test_channel in test_channels:
-            for channel in channels:
-                if channel['url'] == test_channel['url']:
-                    channel['status'] = test_channel['status']
-                    if 'status_code' in test_channel:
-                        channel['status_code'] = test_channel['status_code']
-                    if 'error' in test_channel:
-                        channel['error'] = test_channel['error']
+        # 启动后台线程进行测试
+        thread = threading.Thread(
+            target=background_test_channels,
+            args=(task_id, test_channels, selected_group)
+        )
+        thread.daemon = True
+        thread.start()
         
-        # 保存更新后的频道列表
-        save_channels(channels)
+        flash(f'已开始在后台测试 {len(test_channels)} 个频道，您可以继续使用其他功能。', 'info')
         
-        # 统计在线和离线频道数量
-        online_count = sum(1 for c in test_channels if c['status'] == 'online')
-        offline_count = sum(1 for c in test_channels if c['status'] == 'offline')
-        error_count = sum(1 for c in test_channels if c['status'] == 'error')
-        
-        # 计算测试耗时
-        test_time = end_time - start_time
-        
-        flash(f'测试完成，耗时 {test_time:.2f} 秒。在线: {online_count}, 离线: {offline_count}, 错误: {error_count}', 'success')
-        
-        return redirect(url_for('index'))
+        return redirect(url_for('test_status', task_id=task_id))
     
     # 获取所有频道分组
     channels = load_channels()
     groups = sorted(list(set(channel['group'] for channel in channels)))
     
     return render_template('test_channels.html', groups=groups)
+
+@app.route('/test_status/<task_id>')
+@login_required
+def test_status(task_id):
+    """查看测试任务状态"""
+    global test_tasks
+    
+    if task_id not in test_tasks:
+        flash('测试任务不存在', 'error')
+        return redirect(url_for('index'))
+    
+    task = test_tasks[task_id]
+    
+    # 如果任务已完成，显示结果
+    if task['status'] == 'completed':
+        result = task['result']
+        flash(f'测试完成，耗时 {result["time"]:.2f} 秒。在线: {result["online"]}, 离线: {result["offline"]}, 错误: {result["error"]}', 'success')
+        
+        # 清理任务数据（可选，保留最近的任务）
+        if len(test_tasks) > 5:
+            # 找到最旧的已完成任务
+            oldest_task_id = None
+            oldest_time = float('inf')
+            for tid, t in list(test_tasks.items()):
+                if t['status'] == 'completed' and t['start_time'] < oldest_time:
+                    oldest_task_id = tid
+                    oldest_time = t['start_time']
+            
+            # 删除最旧的任务
+            if oldest_task_id and oldest_task_id != task_id:
+                del test_tasks[oldest_task_id]
+        
+        return redirect(url_for('index'))
+    
+    # 如果任务失败，显示错误
+    elif task['status'] == 'failed':
+        flash(f'测试失败: {task.get("error", "未知错误")}', 'error')
+        return redirect(url_for('index'))
+    
+    # 如果任务正在进行中，显示进度页面
+    return render_template('test_status.html', task=task, task_id=task_id)
 
 @app.route('/play/<int:channel_id>')
 @login_required
@@ -470,6 +622,8 @@ def bulk_delete():
 @login_required
 def import_from_url():
     """从URL导入播放列表"""
+    global test_tasks
+    
     if request.method == 'POST':
         url = request.form.get('url', '').strip()
         test_channels = request.form.get('test_channels', 'no') == 'yes'
@@ -485,26 +639,46 @@ def import_from_url():
             
             # 解析M3U文件
             content = response.text
-            channels = parse_m3u(content)
+            new_channels = parse_m3u(content)
             
-            if channels:
+            if new_channels:
+                # 加载现有频道
+                existing_channels = load_channels()
+                
+                # 合并频道列表
+                for channel in new_channels:
+                    existing_channels.append(channel)
+                
+                # 保存频道列表
+                save_channels(existing_channels)
+                
                 # 如果选择了测试频道
                 if test_channels:
-                    flash(f'正在测试 {len(channels)} 个频道，这可能需要一些时间...', 'info')
-                    channels = test_channels_batch(channels)
+                    # 创建任务ID
+                    task_id = str(int(time.time()))
                     
-                    # 统计在线和离线频道数量
-                    online_count = sum(1 for c in channels if c['status'] == 'online')
-                    offline_count = sum(1 for c in channels if c['status'] == 'offline')
-                    error_count = sum(1 for c in channels if c['status'] == 'error')
+                    # 初始化任务状态
+                    test_tasks[task_id] = {
+                        'status': 'pending',
+                        'progress': 0,
+                        'total': len(new_channels),
+                        'start_time': time.time(),
+                        'group': 'imported'
+                    }
                     
-                    # 保存频道列表
-                    save_channels(channels)
-                    flash(f'成功从URL加载 {len(channels)} 个频道。在线: {online_count}, 离线: {offline_count}, 错误: {error_count}', 'success')
+                    # 启动后台线程进行测试
+                    thread = threading.Thread(
+                        target=background_test_channels,
+                        args=(task_id, new_channels, 'imported')
+                    )
+                    thread.daemon = True
+                    thread.start()
+                    
+                    flash(f'成功从URL加载 {len(new_channels)} 个频道。正在后台测试频道可用性...', 'success')
+                    return redirect(url_for('test_status', task_id=task_id))
                 else:
-                    # 不测试，直接保存
-                    save_channels(channels)
-                    flash(f'成功从URL加载 {len(channels)} 个频道', 'success')
+                    # 不测试，直接返回
+                    flash(f'成功从URL加载 {len(new_channels)} 个频道', 'success')
             else:
                 flash('未找到任何频道', 'warning')
             
