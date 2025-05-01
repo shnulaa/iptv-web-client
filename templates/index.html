@@ -234,7 +234,8 @@
         
         // 添加分组标签
         groups.forEach(group => {
-            const groupId = group.replace(/\s+/g, '_');
+            // 安全处理分组名称，替换特殊字符
+            const groupId = group.replace(/[^a-zA-Z0-9]/g, '_');
             const li = document.createElement('li');
             li.className = 'nav-item';
             li.setAttribute('role', 'presentation');
@@ -248,7 +249,7 @@
             button.setAttribute('role', 'tab');
             button.setAttribute('aria-controls', 'all');
             button.setAttribute('aria-selected', 'false');
-            button.setAttribute('onclick', `changeGroup('${group}')`);
+            button.setAttribute('onclick', `changeGroup('${group.replace(/'/g, "\\'")}')`);
             button.innerHTML = `${group} <span class="badge bg-secondary" id="${groupId}-count">0</span>`;
             
             li.appendChild(button);
@@ -290,14 +291,14 @@
         
         // 如果没有频道，显示提示信息
         if (channels.length === 0) {
-            grid.style.display = 'none';
-            noChannels.style.display = 'block';
+            if (grid) grid.style.display = 'none';
+            if (noChannels) noChannels.style.display = 'block';
             return;
         }
         
         // 显示频道列表
-        grid.style.display = 'flex';
-        noChannels.style.display = 'none';
+        if (grid) grid.style.display = 'flex';
+        if (noChannels) noChannels.style.display = 'none';
         
         // 添加频道卡片
         channels.forEach(channel => {
@@ -361,7 +362,7 @@
         });
         
         // 更新分组计数
-        updateGroupCounts();
+        fetchGroupCounts();
     }
     
     // 更新分页
@@ -442,10 +443,27 @@
         pagination.appendChild(nextLi);
     }
     
-    // 更新分组计数
-    function updateGroupCounts() {
-        // 这个函数需要另外发送请求获取每个分组的频道数量
-        // 为了简化，我们暂时不实现
+    // 获取分组计数
+    function fetchGroupCounts() {
+        // 获取所有分组的频道数量
+        allGroups.forEach(group => {
+            // 安全处理分组名称，替换特殊字符
+            const groupId = group.replace(/[^a-zA-Z0-9]/g, '_');
+            const countElement = document.getElementById(`${groupId}-count`);
+            
+            if (countElement) {
+                // 发送请求获取该分组的频道数量
+                fetch(`/api/channels?group=${encodeURIComponent(group)}&page=1&per_page=1`)
+                    .then(response => response.json())
+                    .then(data => {
+                        countElement.textContent = data.total;
+                    })
+                    .catch(error => {
+                        console.error(`获取分组 ${group} 的频道数量出错:`, error);
+                        countElement.textContent = '?';
+                    });
+            }
+        });
     }
     
     // 切换到指定页码
