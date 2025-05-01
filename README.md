@@ -2,7 +2,7 @@
 
 一个基于Flask的IPTV网页客户端，允许用户通过浏览器观看IPTV频道。支持导入M3U/M3U8播放列表，测试频道可用性，并提供友好的用户界面进行频道管理和观看。
 
-![IPTV Web客户端截图](https://via.placeholder.com/800x450.png?text=IPTV+Web%E5%AE%A2%E6%88%B7%E7%AB%AF)
+![IPTV Web客户端截图](https://raw.githubusercontent.com/shnulaa/openhandTest/refs/heads/main/iptv.png)
 
 ## 功能特点
 
