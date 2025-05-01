@@ -304,7 +304,11 @@
         channels.forEach(channel => {
             const card = template.content.cloneNode(true);
             const cardDiv = card.querySelector('.channel-card');
-            cardDiv.setAttribute('data-channel-id', channel.global_id);
+            
+            // 设置频道ID属性，用于后续查找和更新
+            if (channel.global_id !== undefined) {
+                cardDiv.setAttribute('data-channel-id', channel.global_id);
+            }
             
             // 设置频道信息
             card.querySelector('.channel-name').textContent = channel.name;
@@ -590,21 +594,33 @@
             if (data.success) {
                 showToast(data.message, 'success');
                 
-                // 更新频道状态
-                const statusBadges = document.querySelectorAll(`.channel-card[data-channel-id="${channelId}"] .channel-status-badge`);
-                statusBadges.forEach(badge => {
-                    if (data.channel.status === 'online') {
-                        badge.className = 'badge bg-success';
-                        badge.textContent = '在线';
-                    } else if (data.channel.status === 'offline') {
-                        badge.className = 'badge bg-danger';
-                        badge.textContent = `离线 (${data.channel.status_code || '未知'})`;
-                    } else if (data.channel.status === 'error') {
-                        badge.className = 'badge bg-warning text-dark';
-                        badge.textContent = '错误';
-                        badge.title = data.channel.error || '未知错误';
+                // 查找包含该频道的卡片
+                const channelCard = document.querySelector(`.channel-card[data-channel-id="${channelId}"]`);
+                if (channelCard) {
+                    // 更新频道状态徽章
+                    const statusBadge = channelCard.querySelector('.channel-status-badge');
+                    if (statusBadge) {
+                        if (data.channel.status === 'online') {
+                            statusBadge.className = 'badge bg-success';
+                            statusBadge.textContent = '在线';
+                            statusBadge.removeAttribute('title');
+                        } else if (data.channel.status === 'offline') {
+                            statusBadge.className = 'badge bg-danger';
+                            statusBadge.textContent = `离线 (${data.channel.status_code || '未知'})`;
+                            statusBadge.removeAttribute('title');
+                        } else if (data.channel.status === 'error') {
+                            statusBadge.className = 'badge bg-warning text-dark';
+                            statusBadge.textContent = '错误';
+                            statusBadge.title = data.channel.error || '未知错误';
+                        } else {
+                            statusBadge.className = 'badge bg-secondary';
+                            statusBadge.textContent = '未测试';
+                            statusBadge.removeAttribute('title');
+                        }
                     }
-                });
+                } else {
+                    console.warn(`未找到频道卡片，ID: ${channelId}`);
+                }
                 
                 // 如果当前正在筛选状态，可能需要重新加载
                 if (currentStatus !== 'all' && currentStatus !== data.channel.status) {
