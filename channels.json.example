@@ -1,0 +1,23 @@
+[
+  {
+    "name": "CCTV-1 高清",
+    "url": "http://example.com/cctv1.m3u8",
+    "logo": "https://example.com/cctv1-logo.png",
+    "group": "央视频道",
+    "status": "unknown"
+  },
+  {
+    "name": "CCTV-2 财经",
+    "url": "http://example.com/cctv2.m3u8",
+    "logo": "https://example.com/cctv2-logo.png",
+    "group": "央视频道",
+    "status": "unknown"
+  },
+  {
+    "name": "湖南卫视",
+    "url": "http://example.com/hunantv.m3u8",
+    "logo": "https://example.com/hunan-logo.png",
+    "group": "卫视频道",
+    "status": "unknown"
+  }
+]
