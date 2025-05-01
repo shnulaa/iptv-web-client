@@ -12,19 +12,30 @@ import concurrent.futures
 import time
 import urllib.parse
 import base64
+import hashlib
+from functools import wraps
 from flask import Flask, render_template, request, redirect, url_for, jsonify, session, flash, Response, stream_with_context
 from werkzeug.utils import secure_filename
 
+# 导入配置
+from config import USERNAME, PASSWORD, MAX_CONTENT_LENGTH, UPLOAD_FOLDER, CHANNELS_FILE, PORT, DEBUG
+
 app = Flask(__name__)
 app.secret_key = os.urandom(24)  # 用于session加密
-app.config['UPLOAD_FOLDER'] = 'uploads'
-app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 限制上传文件大小为16MB
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+app.config['MAX_CONTENT_LENGTH'] = MAX_CONTENT_LENGTH
 
+# 登录验证装饰器
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'logged_in' not in session:
+            flash('请先登录', 'warning')
+            return redirect(url_for('login', next=request.url))
+        return f(*args, **kwargs)
+    return decorated_function
 # 确保上传目录存在
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
-
-# 存储频道列表的文件
-CHANNELS_FILE = 'channels.json'
 
 def load_channels():
     """从JSON文件加载频道列表"""
@@ -149,7 +160,39 @@ def parse_m3u(content):
     
     return channels
 
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    """登录页面"""
+    if request.method == 'POST':
+        username = request.form.get('username')
+        password = request.form.get('password')
+        
+        if username == USERNAME and password == PASSWORD:
+            session['logged_in'] = True
+            session['username'] = username
+            
+            next_page = request.args.get('next')
+            if next_page and next_page.startswith('/'):
+                flash('登录成功', 'success')
+                return redirect(next_page)
+            else:
+                flash('登录成功', 'success')
+                return redirect(url_for('index'))
+        else:
+            flash('用户名或密码错误', 'danger')
+    
+    return render_template('login.html')
+
+@app.route('/logout')
+def logout():
+    """注销"""
+    session.pop('logged_in', None)
+    session.pop('username', None)
+    flash('已注销', 'info')
+    return redirect(url_for('login'))
+
 @app.route('/')
+@login_required
 def index():
     """首页 - 显示频道列表"""
     channels = load_channels()
@@ -169,6 +212,7 @@ def index():
     return render_template('index.html', channels_by_group=channels_by_group, groups=groups, all_channels=channels)
 
 @app.route('/test_channels', methods=['GET', 'POST'])
+@login_required
 def test_channels_route():
     """测试频道是否可访问"""
     if request.method == 'POST':
@@ -230,6 +274,7 @@ def test_channels_route():
     return render_template('test_channels.html', groups=groups)
 
 @app.route('/play/<int:channel_id>')
+@login_required
 def play(channel_id):
     """播放特定频道"""
     channels = load_channels()
@@ -242,6 +287,7 @@ def play(channel_id):
         return redirect(url_for('index'))
 
 @app.route('/upload', methods=['GET', 'POST'])
+@login_required
 def upload_playlist():
     """上传播放列表"""
     if request.method == 'POST':
@@ -281,6 +327,7 @@ def upload_playlist():
     return render_template('upload.html')
 
 @app.route('/add', methods=['GET', 'POST'])
+@login_required
 def add_channel():
     """手动添加频道"""
     if request.method == 'POST':
@@ -316,6 +363,7 @@ def add_channel():
     return render_template('add_channel.html', groups=groups)
 
 @app.route('/edit/<int:channel_id>', methods=['GET', 'POST'])
+@login_required
 def edit_channel(channel_id):
     """编辑频道"""
     channels = load_channels()
@@ -354,6 +402,7 @@ def edit_channel(channel_id):
     return render_template('edit_channel.html', channel=channels[channel_id], channel_id=channel_id, groups=groups)
 
 @app.route('/delete/<int:channel_id>', methods=['POST'])
+@login_required
 def delete_channel(channel_id):
     """删除单个频道"""
     channels = load_channels()
@@ -368,6 +417,7 @@ def delete_channel(channel_id):
     return redirect(url_for('index'))
 
 @app.route('/bulk_delete', methods=['POST'])
+@login_required
 def bulk_delete():
     """批量删除频道"""
     delete_type = request.form.get('delete_type', '')
@@ -417,6 +467,7 @@ def bulk_delete():
     return redirect(url_for('index'))
 
 @app.route('/import_url', methods=['GET', 'POST'])
+@login_required
 def import_from_url():
     """从URL导入播放列表"""
     if request.method == 'POST':
@@ -466,12 +517,14 @@ def import_from_url():
     return render_template('import_url.html')
 
 @app.route('/api/channels')
+@login_required
 def api_channels():
     """API: 获取所有频道"""
     channels = load_channels()
     return jsonify(channels)
 
 @app.route('/api/channel/<int:channel_id>')
+@login_required
 def api_channel(channel_id):
     """API: 获取特定频道信息"""
     channels = load_channels()
@@ -482,6 +535,7 @@ def api_channel(channel_id):
         return jsonify({"error": "Channel not found"}), 404
 
 @app.route('/proxy/<path:encoded_url>')
+@login_required
 def proxy_stream(encoded_url):
     """代理HTTP流，解决混合内容问题"""
     try:
@@ -511,4 +565,4 @@ def proxy_stream(encoded_url):
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=12000, debug=True)
+    app.run(host='0.0.0.0', port=PORT, debug=DEBUG)
