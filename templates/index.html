@@ -5,9 +5,18 @@
 {% block content %}
 <div class="row mb-3">
     <div class="col-md-6">
-        <h2>频道列表</h2>
+        <h2>频道列表 <button class="btn btn-sm btn-outline-primary" id="toggleChannelsBtn" onclick="toggleChannelsList()">
+            <i class="bi bi-chevron-down" id="toggleIcon"></i>
+        </button></h2>
     </div>
     <div class="col-md-6 text-end">
+        <div class="input-group mb-2">
+            <input type="text" class="form-control" id="searchInput" placeholder="搜索频道..." onkeyup="searchChannels()">
+            <button class="btn btn-outline-secondary" type="button" onclick="searchChannels()">
+                <i class="bi bi-search"></i>
+            </button>
+        </div>
+        
         <div class="btn-group">
             <button type="button" class="btn btn-danger dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
                 删除所有频道
@@ -60,7 +69,7 @@
     
     <div class="tab-content" id="channelTabsContent">
         <div class="tab-pane fade show active" id="all" role="tabpanel" aria-labelledby="all-tab">
-            <div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 row-cols-xl-4 g-4" id="channels-grid">
+            <div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 row-cols-xl-4 g-4" id="channels-grid" style="display: none;">
                 <!-- 频道卡片将通过JavaScript动态添加 -->
             </div>
             
@@ -168,6 +177,8 @@
     let totalPages = 1;
     let allGroups = [];
     let deleteModal;
+    let isChannelsVisible = false; // 频道列表默认折叠
+    let searchQuery = ''; // 搜索查询
     
     // 初始化
     document.addEventListener('DOMContentLoaded', function() {
@@ -179,7 +190,46 @@
         
         // 每60秒自动刷新一次
         setInterval(loadChannels, 60000);
+        
+        // 初始化折叠图标
+        updateToggleIcon();
     });
+    
+    // 切换频道列表显示/隐藏
+    function toggleChannelsList() {
+        isChannelsVisible = !isChannelsVisible;
+        const grid = document.getElementById('channels-grid');
+        if (grid) {
+            grid.style.display = isChannelsVisible ? 'flex' : 'none';
+        }
+        updateToggleIcon();
+    }
+    
+    // 更新折叠图标
+    function updateToggleIcon() {
+        const icon = document.getElementById('toggleIcon');
+        if (icon) {
+            icon.className = isChannelsVisible ? 'bi bi-chevron-up' : 'bi bi-chevron-down';
+        }
+    }
+    
+    // 搜索频道
+    function searchChannels() {
+        const searchInput = document.getElementById('searchInput');
+        if (searchInput) {
+            searchQuery = searchInput.value.trim().toLowerCase();
+            
+            // 如果搜索框不为空，自动展开频道列表
+            if (searchQuery && !isChannelsVisible) {
+                isChannelsVisible = true;
+                updateToggleIcon();
+            }
+            
+            // 重新加载频道，应用搜索过滤
+            currentPage = 1;
+            loadChannels();
+        }
+    }
     
     // 加载频道数据
     function loadChannels() {
@@ -207,11 +257,29 @@
                 // 更新频道列表
                 updateChannelsList(data.channels, data.total);
                 
-                // 更新分页
-                updatePagination(data.page, data.total_pages);
+                // 更新分页（如果没有搜索查询）
+                if (!searchQuery) {
+                    updatePagination(data.page, data.total_pages);
+                } else {
+                    // 如果有搜索查询，隐藏分页
+                    const pagination = document.getElementById('pagination');
+                    if (pagination) {
+                        pagination.style.display = 'none';
+                    }
+                }
                 
                 // 保存分组列表
                 allGroups = data.groups;
+                
+                // 如果有搜索查询，自动展开频道列表
+                if (searchQuery && !isChannelsVisible) {
+                    isChannelsVisible = true;
+                    updateToggleIcon();
+                    const grid = document.getElementById('channels-grid');
+                    if (grid) {
+                        grid.style.display = 'flex';
+                    }
+                }
                 
                 hideLoading();
             })
@@ -296,9 +364,30 @@
             return;
         }
         
-        // 显示频道列表
-        if (grid) grid.style.display = 'flex';
+        // 显示频道列表（根据折叠状态）
+        if (grid) {
+            grid.style.display = isChannelsVisible ? 'flex' : 'none';
+        }
         if (noChannels) noChannels.style.display = 'none';
+        
+        // 如果有搜索查询，过滤频道
+        if (searchQuery) {
+            channels = channels.filter(channel => 
+                channel.name.toLowerCase().includes(searchQuery) || 
+                channel.group.toLowerCase().includes(searchQuery) ||
+                channel.url.toLowerCase().includes(searchQuery)
+            );
+            
+            // 如果过滤后没有频道，显示提示信息
+            if (channels.length === 0) {
+                if (grid) grid.style.display = 'none';
+                if (noChannels) {
+                    noChannels.style.display = 'block';
+                    noChannels.innerHTML = `<p>没有找到匹配 "${searchQuery}" 的频道</p>`;
+                }
+                return;
+            }
+        }
         
         // 添加频道卡片
         channels.forEach(channel => {
