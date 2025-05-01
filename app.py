@@ -135,6 +135,9 @@ def test_channels_batch(channels, max_workers=5, task_id=None):
     total_channels = len(channels_copy)
     processed_count = 0
     
+    # 创建结果字典，用于存储测试结果
+    results = {}
+    
     for i in range(0, total_channels, batch_size):
         batch = channels_copy[i:i+batch_size]
         urls = [channel['url'] for channel in batch]
@@ -145,7 +148,20 @@ def test_channels_batch(channels, max_workers=5, task_id=None):
                 url = future_to_url[future]
                 try:
                     result = future.result()
-                    # 直接更新频道状态，不存储中间结果
+                    # 存储测试结果
+                    results[url] = result
+                    
+                    # 更新频道副本的状态
+                    for channel in channels_copy:
+                        if channel['url'] == url:
+                            channel['status'] = result['status']
+                            if 'status_code' in result:
+                                channel['status_code'] = result['status_code']
+                            if 'error' in result:
+                                channel['error'] = result['error']
+                            break
+                    
+                    # 更新原始频道的状态
                     for channel in channels:
                         if channel['url'] == url:
                             channel['status'] = result['status']
@@ -156,6 +172,21 @@ def test_channels_batch(channels, max_workers=5, task_id=None):
                             break
                 except Exception as e:
                     # 处理异常
+                    error_result = {
+                        'url': url,
+                        'status': 'error',
+                        'error': str(e)
+                    }
+                    results[url] = error_result
+                    
+                    # 更新频道副本的状态
+                    for channel in channels_copy:
+                        if channel['url'] == url:
+                            channel['status'] = 'error'
+                            channel['error'] = str(e)
+                            break
+                    
+                    # 更新原始频道的状态
                     for channel in channels:
                         if channel['url'] == url:
                             channel['status'] = 'error'
@@ -170,7 +201,7 @@ def test_channels_batch(channels, max_workers=5, task_id=None):
         # 每批处理完后，释放内存
         gc.collect()
     
-    return channels
+    return channels_copy
 
 def parse_m3u(content):
     """解析M3U/M3U8文件内容"""
@@ -294,9 +325,21 @@ def background_test_channels(task_id, channels_to_test, selected_group):
         # 获取所有频道
         all_channels = load_channels()
         
+        # 创建URL到频道的映射，用于更新状态
+        url_to_channel = {channel['url']: channel for channel in all_channels}
+        
         # 测试频道 - 传递task_id以更新进度
         tested_channels = test_channels_batch(channels_to_test, max_workers=3, task_id=task_id)
         end_time = time.time()
+        
+        # 更新原始频道列表中的状态
+        for channel in tested_channels:
+            if channel['url'] in url_to_channel:
+                url_to_channel[channel['url']]['status'] = channel.get('status', 'unknown')
+                if 'status_code' in channel:
+                    url_to_channel[channel['url']]['status_code'] = channel['status_code']
+                if 'error' in channel:
+                    url_to_channel[channel['url']]['error'] = channel['error']
         
         # 保存更新后的频道列表
         save_channels(all_channels)
