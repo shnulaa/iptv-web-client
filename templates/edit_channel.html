@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+
+{% block title %}编辑频道{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-8 offset-md-2">
+        <div class="card">
+            <div class="card-header">
+                <h2 class="mb-0">编辑频道</h2>
+            </div>
+            <div class="card-body">
+                <form method="POST">
+                    <div class="mb-3">
+                        <label for="name" class="form-label">频道名称</label>
+                        <input type="text" class="form-control" id="name" name="name" value="{{ channel.name }}" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="url" class="form-label">频道URL</label>
+                        <input type="url" class="form-control" id="url" name="url" value="{{ channel.url }}" required>
+                        <div class="form-text">支持HTTP/HTTPS流媒体URL，如.m3u8、.ts等格式。</div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="logo" class="form-label">频道Logo URL</label>
+                        <input type="url" class="form-control" id="logo" name="logo" value="{{ channel.logo }}">
+                        <div class="form-text">可选。频道logo图片的URL地址。</div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="group" class="form-label">频道分组</label>
+                        <div class="input-group">
+                            <input type="text" class="form-control" id="group" name="group" list="groupList" value="{{ channel.group }}">
+                            <datalist id="groupList">
+                                {% for group in groups %}
+                                    <option value="{{ group }}">
+                                {% endfor %}
+                                <option value="未分类">
+                                <option value="央视频道">
+                                <option value="卫视频道">
+                                <option value="地方频道">
+                                <option value="国际频道">
+                                <option value="体育频道">
+                                <option value="电影频道">
+                                <option value="音乐频道">
+                                <option value="新闻频道">
+                            </datalist>
+                        </div>
+                        <div class="form-text">选择现有分组或输入新分组名称。</div>
+                    </div>
+                    <div class="d-grid gap-2">
+                        <button type="submit" class="btn btn-primary">保存更改</button>
+                        <a href="{{ url_for('index') }}" class="btn btn-secondary">取消</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

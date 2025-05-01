@@ -1,0 +1,67 @@
+/* 全局样式 */
+body {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.footer {
+    margin-top: auto;
+}
+
+/* 频道卡片样式 */
+.channel-logo {
+    height: 120px;
+    object-fit: contain;
+    padding: 10px;
+}
+
+.channel-logo-placeholder {
+    height: 120px;
+    color: #6c757d;
+}
+
+/* 播放器样式 */
+.video-container {
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+
+/* 响应式调整 */
+@media (max-width: 768px) {
+    .channel-logo, .channel-logo-placeholder {
+        height: 100px;
+    }
+}
+
+/* 自定义滚动条 */
+::-webkit-scrollbar {
+    width: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: #f1f1f1;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #888;
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #555;
+}
+
+/* 加载动画 */
+.loading {
+    display: inline-block;
+    width: 50px;
+    height: 50px;
+    border: 3px solid rgba(255,255,255,.3);
+    border-radius: 50%;
+    border-top-color: #007bff;
+    animation: spin 1s ease-in-out infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}

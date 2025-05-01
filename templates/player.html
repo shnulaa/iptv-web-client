@@ -1,0 +1,212 @@
+{% extends "base.html" %}
+
+{% block title %}播放 - {{ channel.name }}{% endblock %}
+
+{% block head %}
+<style>
+    .video-container {
+        position: relative;
+        width: 100%;
+        padding-bottom: 56.25%; /* 16:9 宽高比 */
+        background-color: #000;
+    }
+    
+    .video-container video {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+    }
+    
+    .player-controls {
+        margin-top: 1rem;
+    }
+    
+    .channel-info {
+        display: flex;
+        align-items: center;
+        margin-bottom: 1rem;
+    }
+    
+    .channel-logo {
+        width: 60px;
+        height: 60px;
+        object-fit: contain;
+        margin-right: 1rem;
+    }
+    
+    .channel-logo-placeholder {
+        width: 60px;
+        height: 60px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background-color: #f8f9fa;
+        margin-right: 1rem;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-12">
+        <div class="channel-info">
+            {% if channel.logo %}
+                <img src="{{ channel.logo }}" class="channel-logo" alt="{{ channel.name }}">
+            {% else %}
+                <div class="channel-logo-placeholder">
+                    <i class="bi bi-tv fs-3"></i>
+                </div>
+            {% endif %}
+            <h1>{{ channel.name }}</h1>
+        </div>
+        
+        <div class="video-container">
+            <video id="video" controls autoplay></video>
+        </div>
+        
+        <div class="player-controls d-flex justify-content-between mt-3">
+            <div>
+                {% if channel_id > 0 %}
+                    <a href="{{ url_for('play', channel_id=channel_id-1) }}" class="btn btn-primary">
+                        <i class="bi bi-skip-backward-fill"></i> 上一个
+                    </a>
+                {% else %}
+                    <button class="btn btn-primary" disabled>
+                        <i class="bi bi-skip-backward-fill"></i> 上一个
+                    </button>
+                {% endif %}
+                
+                {% if channel_id < total_channels - 1 %}
+                    <a href="{{ url_for('play', channel_id=channel_id+1) }}" class="btn btn-primary">
+                        下一个 <i class="bi bi-skip-forward-fill"></i>
+                    </a>
+                {% else %}
+                    <button class="btn btn-primary" disabled>
+                        下一个 <i class="bi bi-skip-forward-fill"></i>
+                    </button>
+                {% endif %}
+            </div>
+            
+            <div>
+                <a href="{{ url_for('index') }}" class="btn btn-secondary">
+                    <i class="bi bi-list"></i> 频道列表
+                </a>
+            </div>
+        </div>
+        
+        <div class="mt-4">
+            <div class="card">
+                <div class="card-header">
+                    频道信息
+                </div>
+                <div class="card-body">
+                    <p><strong>名称:</strong> {{ channel.name }}</p>
+                    <p><strong>分组:</strong> {{ channel.group }}</p>
+                    <p><strong>URL:</strong> <code>{{ channel.url }}</code></p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const video = document.getElementById('video');
+        let videoUrl = "{{ channel.url }}";
+        
+        // 检查是否是HTTP URL，如果是，则使用代理
+        if (videoUrl.startsWith('http://')) {
+            // 使用Base64编码URL
+            const encodedUrl = btoa(videoUrl);
+            videoUrl = "/proxy/" + encodedUrl;
+            console.log('使用代理URL:', videoUrl);
+        }
+        
+        // 检查是否是HLS流
+        if (videoUrl.includes('.m3u8') || "{{ channel.url }}".includes('.m3u8')) {
+            if (Hls.isSupported()) {
+                const hls = new Hls({
+                    // 启用CORS
+                    xhrSetup: function(xhr, url) {
+                        xhr.withCredentials = false; // 禁用凭据，避免CORS问题
+                    }
+                });
+                hls.loadSource(videoUrl);
+                hls.attachMedia(video);
+                hls.on(Hls.Events.MANIFEST_PARSED, function() {
+                    video.play();
+                });
+                hls.on(Hls.Events.ERROR, function(event, data) {
+                    console.error('HLS error:', data);
+                    if (data.fatal) {
+                        switch(data.type) {
+                            case Hls.ErrorTypes.NETWORK_ERROR:
+                                console.log('网络错误，尝试恢复...');
+                                hls.startLoad();
+                                break;
+                            case Hls.ErrorTypes.MEDIA_ERROR:
+                                console.log('媒体错误，尝试恢复...');
+                                hls.recoverMediaError();
+                                break;
+                            default:
+                                console.error('无法恢复的错误');
+                                hls.destroy();
+                                
+                                // 如果是HTTP URL但没有使用代理，尝试使用代理
+                                if ("{{ channel.url }}".startsWith('http://') && !videoUrl.startsWith('/proxy/')) {
+                                    console.log('尝试使用代理...');
+                                    const encodedUrl = btoa("{{ channel.url }}");
+                                    videoUrl = "/proxy/" + encodedUrl;
+                                    
+                                    const newHls = new Hls();
+                                    newHls.loadSource(videoUrl);
+                                    newHls.attachMedia(video);
+                                    newHls.on(Hls.Events.MANIFEST_PARSED, function() {
+                                        video.play();
+                                    });
+                                }
+                                break;
+                        }
+                    }
+                });
+            } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+                // 原生HLS支持 (iOS Safari)
+                video.src = videoUrl;
+                video.addEventListener('loadedmetadata', function() {
+                    video.play();
+                });
+            } else {
+                console.error('您的浏览器不支持HLS');
+                alert('您的浏览器不支持HLS流媒体，请尝试使用其他浏览器。');
+            }
+        } else {
+            // 普通视频URL
+            video.src = videoUrl;
+            video.addEventListener('loadedmetadata', function() {
+                video.play();
+            });
+        }
+        
+        // 错误处理
+        video.addEventListener('error', function(e) {
+            console.error('视频加载错误:', e);
+            
+            // 如果是HTTP URL但没有使用代理，尝试使用代理
+            if ("{{ channel.url }}".startsWith('http://') && !videoUrl.startsWith('/proxy/')) {
+                console.log('加载失败，尝试使用代理...');
+                const encodedUrl = btoa("{{ channel.url }}");
+                videoUrl = "/proxy/" + encodedUrl;
+                video.src = videoUrl;
+                video.load();
+                video.play();
+            } else {
+                alert('加载视频时出错，请检查URL是否有效或尝试其他频道。');
+            }
+        });
+    });
+</script>
+{% endblock %}

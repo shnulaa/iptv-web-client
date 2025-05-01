@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+
+{% block title %}从URL导入播放列表{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-8 offset-md-2">
+        <div class="card">
+            <div class="card-header">
+                <h2 class="mb-0">从URL导入播放列表</h2>
+            </div>
+            <div class="card-body">
+                <form method="POST">
+                    <div class="mb-3">
+                        <label for="url" class="form-label">播放列表URL</label>
+                        <input type="url" class="form-control" id="url" name="url" placeholder="https://example.com/playlist.m3u" required>
+                        <div class="form-text">输入包含M3U/M3U8播放列表的URL地址。</div>
+                    </div>
+                    <div class="mb-3 form-check">
+                        <input type="checkbox" class="form-check-input" id="test_channels" name="test_channels" value="yes">
+                        <label class="form-check-label" for="test_channels">测试频道是否可访问</label>
+                        <div class="form-text">选中此选项将测试每个频道的URL是否可访问。这可能需要较长时间，取决于频道数量。</div>
+                    </div>
+                    <div class="alert alert-info">
+                        <h5>注意事项</h5>
+                        <ul>
+                            <li>导入新的播放列表将替换现有的频道列表</li>
+                            <li>确保URL可公开访问且包含有效的播放列表</li>
+                            <li>某些URL可能需要较长时间下载，请耐心等待</li>
+                            <li>测试频道可用性会显著增加导入时间，但可以帮助筛选出不可用的频道</li>
+                        </ul>
+                    </div>
+                    <div class="d-grid gap-2">
+                        <button type="submit" class="btn btn-primary">导入</button>
+                        <a href="{{ url_for('index') }}" class="btn btn-secondary">返回</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

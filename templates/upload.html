@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+
+{% block title %}上传播放列表{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-8 offset-md-2">
+        <div class="card">
+            <div class="card-header">
+                <h2 class="mb-0">上传播放列表</h2>
+            </div>
+            <div class="card-body">
+                <form method="POST" enctype="multipart/form-data">
+                    <div class="mb-3">
+                        <label for="playlist" class="form-label">选择M3U/M3U8文件</label>
+                        <input type="file" class="form-control" id="playlist" name="playlist" accept=".m3u,.m3u8,text/plain">
+                        <div class="form-text">支持M3U和M3U8格式的播放列表文件。</div>
+                    </div>
+                    <div class="alert alert-info">
+                        <h5>注意事项</h5>
+                        <ul>
+                            <li>上传新的播放列表将替换现有的频道列表</li>
+                            <li>确保播放列表格式正确，包含有效的频道信息</li>
+                            <li>文件大小限制为16MB</li>
+                        </ul>
+                    </div>
+                    <div class="d-grid gap-2">
+                        <button type="submit" class="btn btn-primary">上传</button>
+                        <a href="{{ url_for('index') }}" class="btn btn-secondary">返回</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

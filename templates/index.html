@@ -1,0 +1,238 @@
+{% extends "base.html" %}
+
+{% block title %}IPTV Web客户端 - 频道列表{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-12">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1>频道列表</h1>
+            {% if channels_by_group %}
+            <div class="d-flex">
+                <div class="btn-group me-2">
+                    <button type="button" class="btn btn-outline-primary dropdown-toggle" data-bs-toggle="dropdown">
+                        <i class="bi bi-filter"></i> 筛选
+                    </button>
+                    <ul class="dropdown-menu">
+                        <li><a class="dropdown-item" href="#" onclick="filterChannels('all')">显示所有频道</a></li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li><a class="dropdown-item" href="#" onclick="filterChannels('online')">仅显示在线频道</a></li>
+                        <li><a class="dropdown-item" href="#" onclick="filterChannels('offline')">仅显示离线频道</a></li>
+                        <li><a class="dropdown-item" href="#" onclick="filterChannels('error')">仅显示错误频道</a></li>
+                        <li><a class="dropdown-item" href="#" onclick="filterChannels('unknown')">仅显示未测试频道</a></li>
+                    </ul>
+                </div>
+                <div class="btn-group">
+                    <button type="button" class="btn btn-danger" onclick="confirmDeleteAll()">
+                        <i class="bi bi-trash"></i> 删除所有频道
+                    </button>
+                    <button type="button" class="btn btn-outline-danger dropdown-toggle dropdown-toggle-split" data-bs-toggle="dropdown">
+                        <span class="visually-hidden">更多选项</span>
+                    </button>
+                    <ul class="dropdown-menu">
+                        {% for group in groups %}
+                        <li><a class="dropdown-item" href="#" onclick="confirmDeleteGroup('{{ group }}')">删除 {{ group }} 分组</a></li>
+                        {% endfor %}
+                        <li><hr class="dropdown-divider"></li>
+                        <li><a class="dropdown-item" href="#" onclick="confirmDeleteByStatus('offline')">删除所有离线频道</a></li>
+                        <li><a class="dropdown-item" href="#" onclick="confirmDeleteByStatus('error')">删除所有错误频道</a></li>
+                    </ul>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+        
+        {% if not channels_by_group %}
+            <div class="alert alert-info">
+                <p>还没有添加任何频道。</p>
+                <p>
+                    <a href="{{ url_for('upload_playlist') }}" class="btn btn-primary">上传播放列表</a>
+                    <a href="{{ url_for('import_from_url') }}" class="btn btn-secondary">从URL导入</a>
+                    <a href="{{ url_for('add_channel') }}" class="btn btn-success">添加频道</a>
+                </p>
+            </div>
+        {% else %}
+            <div class="accordion" id="channelAccordion">
+                {% for group in groups %}
+                    <div class="accordion-item">
+                        <h2 class="accordion-header" id="heading{{ loop.index }}">
+                            <button class="accordion-button {% if loop.index > 1 %}collapsed{% endif %}" type="button" 
+                                    data-bs-toggle="collapse" data-bs-target="#collapse{{ loop.index }}">
+                                {{ group }} ({{ channels_by_group[group]|length }})
+                            </button>
+                        </h2>
+                        <div id="collapse{{ loop.index }}" class="accordion-collapse collapse {% if loop.index == 1 %}show{% endif %}" 
+                             data-bs-parent="#channelAccordion">
+                            <div class="accordion-body">
+                                <div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 row-cols-xl-4 g-4">
+                                    {% for channel in channels_by_group[group] %}
+                                        <div class="col">
+                                            <div class="card h-100">
+                                                {% if channel.logo %}
+                                                    <img src="{{ channel.logo }}" class="card-img-top channel-logo" alt="{{ channel.name }}">
+                                                {% else %}
+                                                    <div class="card-img-top channel-logo-placeholder d-flex align-items-center justify-content-center bg-light">
+                                                        <i class="bi bi-tv fs-1"></i>
+                                                    </div>
+                                                {% endif %}
+                                                <div class="card-body">
+                                                    <h5 class="card-title">{{ channel.name }}</h5>
+                                                    {% if channel.status == 'online' %}
+                                                    <span class="badge bg-success">在线</span>
+                                                    {% elif channel.status == 'offline' %}
+                                                    <span class="badge bg-danger">离线</span>
+                                                    {% elif channel.status == 'error' %}
+                                                    <span class="badge bg-warning text-dark" title="{{ channel.error if channel.error is defined else '未知错误' }}">错误</span>
+                                                    {% elif channel.status == 'unknown' %}
+                                                    <span class="badge bg-secondary">未测试</span>
+                                                    {% endif %}
+                                                </div>
+                                                <div class="card-footer d-flex justify-content-between">
+                                                    <a href="{{ url_for('play', channel_id=channel.global_id) }}" class="btn btn-primary btn-sm">
+                                                        <i class="bi bi-play-fill"></i> 播放
+                                                    </a>
+                                                    <div class="btn-group">
+                                                        <a href="{{ url_for('edit_channel', channel_id=channel.global_id) }}" class="btn btn-outline-secondary btn-sm">
+                                                            <i class="bi bi-pencil"></i>
+                                                        </a>
+                                                        <button type="button" class="btn btn-outline-danger btn-sm" 
+                                                                onclick="confirmDelete({{ channel.global_id }}, '{{ channel.name }}')">
+                                                            <i class="bi bi-trash"></i>
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                {% endfor %}
+            </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- 删除确认模态框 -->
+<div class="modal fade" id="deleteModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">确认删除</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>确定要删除频道 "<span id="channelName"></span>" 吗？</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <form id="deleteForm" method="POST">
+                    <button type="submit" class="btn btn-danger">删除</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 批量删除确认模态框 -->
+<div class="modal fade" id="bulkDeleteModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="bulkDeleteTitle">确认批量删除</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p id="bulkDeleteMessage">确定要执行此操作吗？</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <form id="bulkDeleteForm" method="POST">
+                    <input type="hidden" id="bulkDeleteType" name="delete_type" value="">
+                    <input type="hidden" id="bulkDeleteValue" name="delete_value" value="">
+                    <button type="submit" class="btn btn-danger">确认删除</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    function confirmDelete(channelId, channelName) {
+        document.getElementById('channelName').textContent = channelName;
+        document.getElementById('deleteForm').action = "{{ url_for('delete_channel', channel_id=0) }}".replace('0', channelId);
+        
+        const deleteModal = new bootstrap.Modal(document.getElementById('deleteModal'));
+        deleteModal.show();
+    }
+    
+    function confirmDeleteAll() {
+        document.getElementById('bulkDeleteTitle').textContent = "确认删除所有频道";
+        document.getElementById('bulkDeleteMessage').textContent = "确定要删除所有频道吗？此操作无法撤销。";
+        document.getElementById('bulkDeleteType').value = "all";
+        document.getElementById('bulkDeleteValue').value = "";
+        document.getElementById('bulkDeleteForm').action = "{{ url_for('bulk_delete') }}";
+        
+        const bulkDeleteModal = new bootstrap.Modal(document.getElementById('bulkDeleteModal'));
+        bulkDeleteModal.show();
+    }
+    
+    function confirmDeleteGroup(groupName) {
+        document.getElementById('bulkDeleteTitle').textContent = "确认删除分组";
+        document.getElementById('bulkDeleteMessage').textContent = `确定要删除"${groupName}"分组中的所有频道吗？此操作无法撤销。`;
+        document.getElementById('bulkDeleteType').value = "group";
+        document.getElementById('bulkDeleteValue').value = groupName;
+        document.getElementById('bulkDeleteForm').action = "{{ url_for('bulk_delete') }}";
+        
+        const bulkDeleteModal = new bootstrap.Modal(document.getElementById('bulkDeleteModal'));
+        bulkDeleteModal.show();
+    }
+    
+    function confirmDeleteByStatus(status) {
+        const statusMap = {
+            'online': '在线',
+            'offline': '离线',
+            'error': '错误',
+            'unknown': '未测试'
+        };
+        
+        document.getElementById('bulkDeleteTitle').textContent = `确认删除${statusMap[status]}频道`;
+        document.getElementById('bulkDeleteMessage').textContent = `确定要删除所有${statusMap[status]}频道吗？此操作无法撤销。`;
+        document.getElementById('bulkDeleteType').value = "status";
+        document.getElementById('bulkDeleteValue').value = status;
+        document.getElementById('bulkDeleteForm').action = "{{ url_for('bulk_delete') }}";
+        
+        const bulkDeleteModal = new bootstrap.Modal(document.getElementById('bulkDeleteModal'));
+        bulkDeleteModal.show();
+    }
+    
+    function filterChannels(status) {
+        // 获取所有频道卡片
+        const channelCards = document.querySelectorAll('.card.h-100');
+        
+        // 遍历所有频道卡片
+        channelCards.forEach(card => {
+            // 获取频道状态
+            const badges = card.querySelectorAll('.badge');
+            let channelStatus = 'unknown';
+            
+            badges.forEach(badge => {
+                if (badge.classList.contains('bg-success')) channelStatus = 'online';
+                else if (badge.classList.contains('bg-danger')) channelStatus = 'offline';
+                else if (badge.classList.contains('bg-warning')) channelStatus = 'error';
+                else if (badge.classList.contains('bg-secondary')) channelStatus = 'unknown';
+            });
+            
+            // 显示或隐藏频道卡片
+            if (status === 'all' || channelStatus === status) {
+                card.closest('.col').style.display = '';
+            } else {
+                card.closest('.col').style.display = 'none';
+            }
+        });
+    }
+</script>
+{% endblock %}
