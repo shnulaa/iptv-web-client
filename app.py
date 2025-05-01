@@ -660,11 +660,26 @@ def delete_channel(channel_id):
     channels = load_channels()
     
     if 0 <= channel_id < len(channels):
+        channel_name = channels[channel_id]['name']
         del channels[channel_id]
         save_channels(channels)
-        flash('频道已删除', 'success')
+        
+        # 检查是否是AJAX请求
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({
+                'success': True,
+                'message': f'频道 "{channel_name}" 已删除'
+            })
+        else:
+            flash(f'频道 "{channel_name}" 已删除', 'success')
     else:
-        flash('频道不存在', 'error')
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({
+                'success': False,
+                'error': '频道不存在'
+            }), 404
+        else:
+            flash('频道不存在', 'error')
     
     return redirect(url_for('index'))
 
@@ -672,26 +687,41 @@ def delete_channel(channel_id):
 @login_required
 def bulk_delete():
     """批量删除频道"""
-    delete_type = request.form.get('delete_type', '')
-    delete_value = request.form.get('delete_value', '')
+    # 检查是否是AJAX请求
+    is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
+    
+    # 获取请求数据
+    if is_ajax:
+        data = request.json
+        delete_type = data.get('delete_type', '')
+        delete_value = data.get('delete_value', '')
+    else:
+        delete_type = request.form.get('delete_type', '')
+        delete_value = request.form.get('delete_value', '')
     
     channels = load_channels()
+    message = ''
+    success = True
     
     if delete_type == 'all':
         # 删除所有频道
+        original_count = len(channels)
         channels = []
         save_channels(channels)
-        flash('所有频道已删除', 'success')
+        message = f'所有频道已删除（共 {original_count} 个）'
     
     elif delete_type == 'group':
         # 删除指定分组的频道
         if delete_value:
+            original_count = len(channels)
             # 保留不属于指定分组的频道
             channels = [c for c in channels if c['group'] != delete_value]
+            deleted_count = original_count - len(channels)
             save_channels(channels)
-            flash(f'"{delete_value}"分组中的所有频道已删除', 'success')
+            message = f'"{delete_value}"分组中的所有频道已删除（共 {deleted_count} 个）'
         else:
-            flash('分组名称无效', 'error')
+            message = '分组名称无效'
+            success = False
     
     elif delete_type == 'status':
         # 删除指定状态的频道
@@ -709,14 +739,32 @@ def bulk_delete():
                 'unknown': '未测试'
             }
             
-            flash(f'已删除 {deleted_count} 个{status_map.get(delete_value, delete_value)}频道', 'success')
+            message = f'已删除 {deleted_count} 个{status_map.get(delete_value, delete_value)}频道'
         else:
-            flash('状态无效', 'error')
+            message = '状态无效'
+            success = False
     
     else:
-        flash('无效的删除操作', 'error')
+        message = '无效的删除操作'
+        success = False
     
-    return redirect(url_for('index'))
+    if is_ajax:
+        if success:
+            return jsonify({
+                'success': True,
+                'message': message
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': message
+            }), 400
+    else:
+        if success:
+            flash(message, 'success')
+        else:
+            flash(message, 'error')
+        return redirect(url_for('index'))
 
 @app.route('/import_url', methods=['GET', 'POST'])
 @login_required
@@ -795,7 +843,43 @@ def import_from_url():
 def api_channels():
     """API: 获取所有频道"""
     channels = load_channels()
-    return jsonify(channels)
+    
+    # 为每个频道添加全局索引
+    for i, channel in enumerate(channels):
+        channel['global_id'] = i
+    
+    # 获取查询参数
+    group = request.args.get('group', None)
+    status = request.args.get('status', None)
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 20, type=int)
+    
+    # 筛选频道
+    if group and group != 'all':
+        channels = [c for c in channels if c['group'] == group]
+    
+    if status and status != 'all':
+        channels = [c for c in channels if c.get('status') == status]
+    
+    # 计算总页数
+    total_pages = (len(channels) + per_page - 1) // per_page
+    
+    # 分页
+    start_idx = (page - 1) * per_page
+    end_idx = min(start_idx + per_page, len(channels))
+    paginated_channels = channels[start_idx:end_idx]
+    
+    # 获取所有分组
+    groups = sorted(list(set(channel['group'] for channel in channels)))
+    
+    return jsonify({
+        'channels': paginated_channels,
+        'total': len(channels),
+        'page': page,
+        'per_page': per_page,
+        'total_pages': total_pages,
+        'groups': groups
+    })
 
 @app.route('/api/channel/<int:channel_id>')
 @login_required
@@ -807,6 +891,65 @@ def api_channel(channel_id):
         return jsonify(channels[channel_id])
     else:
         return jsonify({"error": "Channel not found"}), 404
+
+@app.route('/api/test_channel', methods=['POST'])
+@login_required
+def api_test_channel():
+    """API: 测试单个频道"""
+    data = request.json
+    channel_id = data.get('channel_id')
+    
+    if not channel_id and channel_id != 0:
+        return jsonify({"error": "频道ID不能为空"}), 400
+    
+    try:
+        channel_id = int(channel_id)
+        channels = load_channels()
+        
+        if 0 <= channel_id < len(channels):
+            channel = channels[channel_id]
+            
+            # 测试频道
+            start_time = time.time()
+            result = test_channel_url(channel['url'])
+            end_time = time.time()
+            
+            # 更新频道状态
+            channel['status'] = result['status']
+            if 'status_code' in result:
+                channel['status_code'] = result['status_code']
+            if 'error' in result:
+                channel['error'] = result['error']
+            
+            # 保存更新后的频道列表
+            save_channels(channels)
+            
+            # 计算测试耗时
+            test_time = end_time - start_time
+            
+            # 返回测试结果
+            return jsonify({
+                'success': True,
+                'channel': channel,
+                'test_time': test_time,
+                'message': f'频道测试完成，状态: {result["status"]}，耗时: {test_time:.2f}秒'
+            })
+        else:
+            return jsonify({"error": "频道不存在"}), 404
+    except Exception as e:
+        return jsonify({"error": f"测试频道时出错: {str(e)}"}), 500
+
+@app.route('/api/test_status/<task_id>')
+@login_required
+def api_test_status(task_id):
+    """API: 获取测试任务状态"""
+    global test_tasks
+    
+    if task_id not in test_tasks:
+        return jsonify({"error": "测试任务不存在"}), 404
+    
+    task = test_tasks[task_id]
+    return jsonify(task)
 
 @app.route('/proxy/<path:encoded_url>')
 @login_required

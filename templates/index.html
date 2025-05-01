@@ -1,245 +1,657 @@
 {% extends "base.html" %}
 
-{% block title %}IPTV Web客户端 - 频道列表{% endblock %}
+{% block title %}首页 - IPTV Web客户端{% endblock %}
 
 {% block content %}
-<div class="row">
-    <div class="col-md-12">
-        <div class="d-flex justify-content-between align-items-center mb-4">
-            <h1>频道列表</h1>
-            {% if channels_by_group %}
-            <div class="d-flex">
-                <div class="btn-group me-2">
-                    <button type="button" class="btn btn-outline-primary dropdown-toggle" data-bs-toggle="dropdown">
-                        <i class="bi bi-filter"></i> 筛选
-                    </button>
-                    <ul class="dropdown-menu">
-                        <li><a class="dropdown-item" href="#" onclick="filterChannels('all')">显示所有频道</a></li>
-                        <li><hr class="dropdown-divider"></li>
-                        <li><a class="dropdown-item" href="#" onclick="filterChannels('online')">仅显示在线频道</a></li>
-                        <li><a class="dropdown-item" href="#" onclick="filterChannels('offline')">仅显示离线频道</a></li>
-                        <li><a class="dropdown-item" href="#" onclick="filterChannels('error')">仅显示错误频道</a></li>
-                        <li><a class="dropdown-item" href="#" onclick="filterChannels('unknown')">仅显示未测试频道</a></li>
-                    </ul>
+<div class="row mb-3">
+    <div class="col-md-6">
+        <h2>频道列表</h2>
+    </div>
+    <div class="col-md-6 text-end">
+        <div class="btn-group">
+            <button type="button" class="btn btn-danger dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+                删除所有频道
+            </button>
+            <ul class="dropdown-menu dropdown-menu-end">
+                <li>
+                    <button type="button" class="dropdown-item text-danger" onclick="bulkDelete('all', '')">删除所有频道</button>
+                </li>
+                <li><hr class="dropdown-divider"></li>
+                <li>
+                    <button type="button" class="dropdown-item" onclick="bulkDelete('status', 'offline')">删除所有离线频道</button>
+                </li>
+                <li>
+                    <button type="button" class="dropdown-item" onclick="bulkDelete('status', 'error')">删除所有错误频道</button>
+                </li>
+                <li><hr class="dropdown-divider" id="group-divider"></li>
+                <div id="group-delete-items">
+                    <!-- 分组删除选项将通过JavaScript动态添加 -->
                 </div>
-                <div class="btn-group">
-                    <button type="button" class="btn btn-danger" onclick="confirmDeleteAll()">
-                        <i class="bi bi-trash"></i> 删除所有频道
-                    </button>
-                    <button type="button" class="btn btn-outline-danger dropdown-toggle dropdown-toggle-split" data-bs-toggle="dropdown">
-                        <span class="visually-hidden">更多选项</span>
-                    </button>
-                    <ul class="dropdown-menu">
-                        {% for group in groups %}
-                        <li><a class="dropdown-item" href="#" onclick="confirmDeleteGroup('{{ group }}')">删除 {{ group }} 分组</a></li>
-                        {% endfor %}
-                        <li><hr class="dropdown-divider"></li>
-                        <li><a class="dropdown-item" href="#" onclick="confirmDeleteByStatus('offline')">删除所有离线频道</a></li>
-                        <li><a class="dropdown-item" href="#" onclick="confirmDeleteByStatus('error')">删除所有错误频道</a></li>
-                    </ul>
-                </div>
-            </div>
-            {% endif %}
+            </ul>
         </div>
         
-        {% if not channels_by_group %}
-            <div class="alert alert-info">
-                <p>还没有添加任何频道。</p>
-                <p>
-                    <a href="{{ url_for('upload_playlist') }}" class="btn btn-primary">上传播放列表</a>
-                    <a href="{{ url_for('import_from_url') }}" class="btn btn-secondary">从URL导入</a>
-                    <a href="{{ url_for('add_channel') }}" class="btn btn-success">添加频道</a>
-                </p>
+        <div class="btn-group ms-2">
+            <button type="button" class="btn btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+                筛选
+            </button>
+            <ul class="dropdown-menu dropdown-menu-end">
+                <li><button class="dropdown-item" onclick="filterChannels('all')">所有频道</button></li>
+                <li><hr class="dropdown-divider"></li>
+                <li><button class="dropdown-item" onclick="filterChannels('online')">在线频道</button></li>
+                <li><button class="dropdown-item" onclick="filterChannels('offline')">离线频道</button></li>
+                <li><button class="dropdown-item" onclick="filterChannels('error')">错误频道</button></li>
+                <li><button class="dropdown-item" onclick="filterChannels('unknown')">未测试频道</button></li>
+            </ul>
+        </div>
+    </div>
+</div>
+
+<div id="channels-container">
+    <div id="channel-tabs-container">
+        <ul class="nav nav-tabs mb-4" id="channelTabs" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link active" id="all-tab" data-bs-toggle="tab" data-bs-target="#all" type="button" role="tab" aria-controls="all" aria-selected="true" onclick="changeGroup('all')">
+                    所有频道 <span class="badge bg-secondary" id="all-count">0</span>
+                </button>
+            </li>
+            <!-- 分组标签将通过JavaScript动态添加 -->
+        </ul>
+    </div>
+    
+    <div class="tab-content" id="channelTabsContent">
+        <div class="tab-pane fade show active" id="all" role="tabpanel" aria-labelledby="all-tab">
+            <div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 row-cols-xl-4 g-4" id="channels-grid">
+                <!-- 频道卡片将通过JavaScript动态添加 -->
             </div>
-        {% else %}
-            <div class="accordion" id="channelAccordion">
-                {% for group in groups %}
-                    <div class="accordion-item">
-                        <h2 class="accordion-header" id="heading{{ loop.index }}">
-                            <button class="accordion-button {% if loop.index > 1 %}collapsed{% endif %}" type="button" 
-                                    data-bs-toggle="collapse" data-bs-target="#collapse{{ loop.index }}">
-                                {{ group }} ({{ channels_by_group[group]|length }})
-                            </button>
-                        </h2>
-                        <div id="collapse{{ loop.index }}" class="accordion-collapse collapse {% if loop.index == 1 %}show{% endif %}" 
-                             data-bs-parent="#channelAccordion">
-                            <div class="accordion-body">
-                                <div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 row-cols-xl-4 g-4">
-                                    {% for channel in channels_by_group[group] %}
-                                        <div class="col">
-                                            <div class="card h-100">
-                                                {% if channel.logo %}
-                                                    <img src="{{ channel.logo }}" class="card-img-top channel-logo" alt="{{ channel.name }}">
-                                                {% else %}
-                                                    <div class="card-img-top channel-logo-placeholder d-flex align-items-center justify-content-center bg-light">
-                                                        <i class="bi bi-tv fs-1"></i>
-                                                    </div>
-                                                {% endif %}
-                                                <div class="card-body">
-                                                    <h5 class="card-title">{{ channel.name }}</h5>
-                                                    {% if channel.status == 'online' %}
-                                                    <span class="badge bg-success">在线</span>
-                                                    {% elif channel.status == 'offline' %}
-                                                    <span class="badge bg-danger">离线</span>
-                                                    {% elif channel.status == 'error' %}
-                                                    <span class="badge bg-warning text-dark" title="{{ channel.error if channel.error is defined else '未知错误' }}">错误</span>
-                                                    {% elif channel.status == 'unknown' %}
-                                                    <span class="badge bg-secondary">未测试</span>
-                                                    {% endif %}
-                                                </div>
-                                                <div class="card-footer">
-                                                    <div class="d-flex justify-content-between mb-2">
-                                                        <a href="{{ url_for('play', channel_id=channel.global_id) }}" class="btn btn-primary btn-sm">
-                                                            <i class="bi bi-play-fill"></i> 播放
-                                                        </a>
-                                                        <div class="btn-group">
-                                                            <a href="{{ url_for('edit_channel', channel_id=channel.global_id) }}" class="btn btn-outline-secondary btn-sm">
-                                                                <i class="bi bi-pencil"></i>
-                                                            </a>
-                                                            <button type="button" class="btn btn-outline-danger btn-sm" 
-                                                                    onclick="confirmDelete({{ channel.global_id }}, '{{ channel.name }}')">
-                                                                <i class="bi bi-trash"></i>
-                                                            </button>
-                                                        </div>
-                                                    </div>
-                                                    <form action="{{ url_for('test_single_channel') }}" method="post" class="d-grid">
-                                                        <input type="hidden" name="channel_id" value="{{ channel.global_id }}">
-                                                        <button type="submit" class="btn btn-outline-info btn-sm">
-                                                            <i class="bi bi-check-circle"></i> 测试频道
-                                                        </button>
-                                                    </form>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    {% endfor %}
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                {% endfor %}
+            
+            <div class="d-flex justify-content-center mt-4">
+                <nav aria-label="频道分页">
+                    <ul class="pagination" id="pagination">
+                        <!-- 分页将通过JavaScript动态添加 -->
+                    </ul>
+                </nav>
             </div>
-        {% endif %}
+        </div>
+    </div>
+    
+    <div class="alert alert-info" id="no-channels" style="display: none;">
+        <p>没有频道。您可以：</p>
+        <ul>
+            <li><a href="{{ url_for('upload_playlist') }}">上传播放列表</a></li>
+            <li><a href="{{ url_for('import_from_url') }}">从URL导入播放列表</a></li>
+            <li><a href="{{ url_for('add_channel') }}">手动添加频道</a></li>
+        </ul>
+    </div>
+    
+    <div class="text-center my-4" id="loading-indicator" style="display: none;">
+        <div class="spinner-border text-primary" role="status">
+            <span class="visually-hidden">加载中...</span>
+        </div>
+        <p class="mt-2">加载中，请稍候...</p>
     </div>
 </div>
 
 <!-- 删除确认模态框 -->
-<div class="modal fade" id="deleteModal" tabindex="-1">
+<div class="modal fade" id="deleteModal" tabindex="-1" aria-labelledby="deleteModalLabel" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">确认删除</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                <h5 class="modal-title" id="deleteModalLabel">确认删除</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
-                <p>确定要删除频道 "<span id="channelName"></span>" 吗？</p>
+                确定要删除频道 "<span id="channelName"></span>" 吗？
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
-                <form id="deleteForm" method="POST">
-                    <button type="submit" class="btn btn-danger">删除</button>
-                </form>
+                <button type="button" class="btn btn-danger" id="confirmDeleteBtn">删除</button>
             </div>
         </div>
     </div>
 </div>
 
-<!-- 批量删除确认模态框 -->
-<div class="modal fade" id="bulkDeleteModal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="bulkDeleteTitle">确认批量删除</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+<!-- 通知提示 -->
+<div class="position-fixed bottom-0 end-0 p-3" style="z-index: 5">
+    <div id="toast-container">
+        <!-- 通知将通过JavaScript动态添加 -->
+    </div>
+</div>
+
+<!-- 频道卡片模板 -->
+<template id="channel-card-template">
+    <div class="col channel-card">
+        <div class="card h-100">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="card-title mb-0 channel-name"></h5>
             </div>
-            <div class="modal-body">
-                <p id="bulkDeleteMessage">确定要执行此操作吗？</p>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
-                <form id="bulkDeleteForm" method="POST">
-                    <input type="hidden" id="bulkDeleteType" name="delete_type" value="">
-                    <input type="hidden" id="bulkDeleteValue" name="delete_value" value="">
-                    <button type="submit" class="btn btn-danger">确认删除</button>
-                </form>
+            <div class="card-body">
+                <div class="text-center mb-3 channel-logo-container">
+                    <img src="" alt="" class="img-fluid channel-logo" style="max-height: 60px;">
+                </div>
+                <p class="card-text"><strong>分组:</strong> <span class="channel-group"></span></p>
+                <p class="card-text text-truncate"><strong>URL:</strong> <small class="channel-url"></small></p>
+                <div class="mt-2">
+                    <strong>状态:</strong>
+                    <span class="channel-status-badge"></span>
+                </div>
+                <div class="card-footer">
+                    <div class="d-flex justify-content-between mb-2">
+                        <a href="#" class="btn btn-primary btn-sm play-btn">
+                            <i class="bi bi-play-fill"></i> 播放
+                        </a>
+                        <div class="btn-group">
+                            <a href="#" class="btn btn-outline-secondary btn-sm edit-btn">
+                                <i class="bi bi-pencil"></i>
+                            </a>
+                            <button type="button" class="btn btn-outline-danger btn-sm delete-btn">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <button type="button" class="btn btn-outline-info btn-sm w-100 test-btn">
+                        <i class="bi bi-check-circle"></i> 测试频道
+                    </button>
+                </div>
             </div>
         </div>
     </div>
-</div>
+</template>
 {% endblock %}
 
 {% block scripts %}
 <script>
+    // 全局变量
+    let currentPage = 1;
+    let currentGroup = 'all';
+    let currentStatus = 'all';
+    let perPage = 20;
+    let totalPages = 1;
+    let allGroups = [];
+    let deleteModal;
+    
+    // 初始化
+    document.addEventListener('DOMContentLoaded', function() {
+        // 初始化删除模态框
+        deleteModal = new bootstrap.Modal(document.getElementById('deleteModal'));
+        
+        // 加载频道数据
+        loadChannels();
+        
+        // 每60秒自动刷新一次
+        setInterval(loadChannels, 60000);
+    });
+    
+    // 加载频道数据
+    function loadChannels() {
+        showLoading();
+        
+        // 构建API URL
+        let url = `/api/channels?page=${currentPage}&per_page=${perPage}`;
+        if (currentGroup !== 'all') {
+            url += `&group=${encodeURIComponent(currentGroup)}`;
+        }
+        if (currentStatus !== 'all') {
+            url += `&status=${currentStatus}`;
+        }
+        
+        // 发送请求
+        fetch(url)
+            .then(response => response.json())
+            .then(data => {
+                // 更新分组标签
+                updateGroupTabs(data.groups);
+                
+                // 更新分组删除选项
+                updateGroupDeleteItems(data.groups);
+                
+                // 更新频道列表
+                updateChannelsList(data.channels, data.total);
+                
+                // 更新分页
+                updatePagination(data.page, data.total_pages);
+                
+                // 保存分组列表
+                allGroups = data.groups;
+                
+                hideLoading();
+            })
+            .catch(error => {
+                console.error('加载频道数据出错:', error);
+                showToast('加载频道数据出错: ' + error.message, 'danger');
+                hideLoading();
+            });
+    }
+    
+    // 更新分组标签
+    function updateGroupTabs(groups) {
+        const tabsContainer = document.getElementById('channelTabs');
+        const allTab = document.getElementById('all-tab');
+        
+        // 保留"所有频道"标签，移除其他标签
+        while (tabsContainer.children.length > 1) {
+            tabsContainer.removeChild(tabsContainer.lastChild);
+        }
+        
+        // 添加分组标签
+        groups.forEach(group => {
+            const groupId = group.replace(/\s+/g, '_');
+            const li = document.createElement('li');
+            li.className = 'nav-item';
+            li.setAttribute('role', 'presentation');
+            
+            const button = document.createElement('button');
+            button.className = 'nav-link';
+            button.id = `${groupId}-tab`;
+            button.setAttribute('data-bs-toggle', 'tab');
+            button.setAttribute('data-bs-target', '#all');
+            button.setAttribute('type', 'button');
+            button.setAttribute('role', 'tab');
+            button.setAttribute('aria-controls', 'all');
+            button.setAttribute('aria-selected', 'false');
+            button.setAttribute('onclick', `changeGroup('${group}')`);
+            button.innerHTML = `${group} <span class="badge bg-secondary" id="${groupId}-count">0</span>`;
+            
+            li.appendChild(button);
+            tabsContainer.appendChild(li);
+        });
+    }
+    
+    // 更新分组删除选项
+    function updateGroupDeleteItems(groups) {
+        const container = document.getElementById('group-delete-items');
+        container.innerHTML = '';
+        
+        groups.forEach(group => {
+            const li = document.createElement('li');
+            const button = document.createElement('button');
+            button.className = 'dropdown-item';
+            button.setAttribute('onclick', `bulkDelete('group', '${group}')`);
+            button.textContent = `删除 ${group} 分组`;
+            
+            li.appendChild(button);
+            container.appendChild(li);
+        });
+        
+        // 如果没有分组，隐藏分隔线
+        document.getElementById('group-divider').style.display = groups.length > 0 ? 'block' : 'none';
+    }
+    
+    // 更新频道列表
+    function updateChannelsList(channels, total) {
+        const grid = document.getElementById('channels-grid');
+        const noChannels = document.getElementById('no-channels');
+        const template = document.getElementById('channel-card-template');
+        
+        // 清空现有内容
+        grid.innerHTML = '';
+        
+        // 更新计数
+        document.getElementById('all-count').textContent = total;
+        
+        // 如果没有频道，显示提示信息
+        if (channels.length === 0) {
+            grid.style.display = 'none';
+            noChannels.style.display = 'block';
+            return;
+        }
+        
+        // 显示频道列表
+        grid.style.display = 'flex';
+        noChannels.style.display = 'none';
+        
+        // 添加频道卡片
+        channels.forEach(channel => {
+            const card = template.content.cloneNode(true);
+            const cardDiv = card.querySelector('.channel-card');
+            cardDiv.setAttribute('data-channel-id', channel.global_id);
+            
+            // 设置频道信息
+            card.querySelector('.channel-name').textContent = channel.name;
+            
+            // 设置Logo
+            const logoContainer = card.querySelector('.channel-logo-container');
+            const logoImg = card.querySelector('.channel-logo');
+            if (channel.logo) {
+                logoImg.src = channel.logo;
+                logoImg.alt = channel.name;
+                logoContainer.style.display = 'block';
+            } else {
+                logoContainer.style.display = 'none';
+            }
+            
+            // 设置分组和URL
+            card.querySelector('.channel-group').textContent = channel.group;
+            card.querySelector('.channel-url').textContent = channel.url;
+            
+            // 设置状态徽章
+            const statusBadge = card.querySelector('.channel-status-badge');
+            if (channel.status === 'online') {
+                statusBadge.className = 'badge bg-success';
+                statusBadge.textContent = '在线';
+            } else if (channel.status === 'offline') {
+                statusBadge.className = 'badge bg-danger';
+                statusBadge.textContent = `离线 (${channel.status_code || '未知'})`;
+            } else if (channel.status === 'error') {
+                statusBadge.className = 'badge bg-warning text-dark';
+                statusBadge.textContent = '错误';
+                statusBadge.title = channel.error || '未知错误';
+            } else {
+                statusBadge.className = 'badge bg-secondary';
+                statusBadge.textContent = '未测试';
+            }
+            
+            // 设置按钮链接和事件
+            card.querySelector('.play-btn').href = `/play/${channel.global_id}`;
+            card.querySelector('.edit-btn').href = `/edit_channel/${channel.global_id}`;
+            
+            const deleteBtn = card.querySelector('.delete-btn');
+            deleteBtn.setAttribute('data-channel-id', channel.global_id);
+            deleteBtn.setAttribute('data-channel-name', channel.name);
+            deleteBtn.addEventListener('click', function() {
+                confirmDelete(channel.global_id, channel.name);
+            });
+            
+            const testBtn = card.querySelector('.test-btn');
+            testBtn.setAttribute('data-channel-id', channel.global_id);
+            testBtn.addEventListener('click', function() {
+                testChannel(channel.global_id);
+            });
+            
+            grid.appendChild(card);
+        });
+        
+        // 更新分组计数
+        updateGroupCounts();
+    }
+    
+    // 更新分页
+    function updatePagination(page, totalPages) {
+        const pagination = document.getElementById('pagination');
+        pagination.innerHTML = '';
+        
+        // 如果只有一页，不显示分页
+        if (totalPages <= 1) {
+            pagination.style.display = 'none';
+            return;
+        }
+        
+        pagination.style.display = 'flex';
+        
+        // 上一页按钮
+        const prevLi = document.createElement('li');
+        prevLi.className = `page-item ${page <= 1 ? 'disabled' : ''}`;
+        const prevLink = document.createElement('a');
+        prevLink.className = 'page-link';
+        prevLink.href = '#';
+        prevLink.setAttribute('aria-label', '上一页');
+        prevLink.innerHTML = '<span aria-hidden="true">&laquo;</span>';
+        if (page > 1) {
+            prevLink.addEventListener('click', function(e) {
+                e.preventDefault();
+                goToPage(page - 1);
+            });
+        }
+        prevLi.appendChild(prevLink);
+        pagination.appendChild(prevLi);
+        
+        // 页码按钮
+        let startPage = Math.max(1, page - 2);
+        let endPage = Math.min(totalPages, page + 2);
+        
+        // 确保显示5个页码按钮（如果有足够的页数）
+        if (endPage - startPage < 4) {
+            if (startPage === 1) {
+                endPage = Math.min(5, totalPages);
+            } else {
+                startPage = Math.max(1, endPage - 4);
+            }
+        }
+        
+        for (let i = startPage; i <= endPage; i++) {
+            const pageLi = document.createElement('li');
+            pageLi.className = `page-item ${i === page ? 'active' : ''}`;
+            const pageLink = document.createElement('a');
+            pageLink.className = 'page-link';
+            pageLink.href = '#';
+            pageLink.textContent = i;
+            if (i !== page) {
+                pageLink.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    goToPage(i);
+                });
+            }
+            pageLi.appendChild(pageLink);
+            pagination.appendChild(pageLi);
+        }
+        
+        // 下一页按钮
+        const nextLi = document.createElement('li');
+        nextLi.className = `page-item ${page >= totalPages ? 'disabled' : ''}`;
+        const nextLink = document.createElement('a');
+        nextLink.className = 'page-link';
+        nextLink.href = '#';
+        nextLink.setAttribute('aria-label', '下一页');
+        nextLink.innerHTML = '<span aria-hidden="true">&raquo;</span>';
+        if (page < totalPages) {
+            nextLink.addEventListener('click', function(e) {
+                e.preventDefault();
+                goToPage(page + 1);
+            });
+        }
+        nextLi.appendChild(nextLink);
+        pagination.appendChild(nextLi);
+    }
+    
+    // 更新分组计数
+    function updateGroupCounts() {
+        // 这个函数需要另外发送请求获取每个分组的频道数量
+        // 为了简化，我们暂时不实现
+    }
+    
+    // 切换到指定页码
+    function goToPage(page) {
+        currentPage = page;
+        loadChannels();
+        window.scrollTo(0, 0);
+    }
+    
+    // 切换分组
+    function changeGroup(group) {
+        currentGroup = group;
+        currentPage = 1;
+        loadChannels();
+    }
+    
+    // 筛选频道
+    function filterChannels(status) {
+        currentStatus = status;
+        currentPage = 1;
+        loadChannels();
+    }
+    
+    // 确认删除频道
     function confirmDelete(channelId, channelName) {
         document.getElementById('channelName').textContent = channelName;
-        document.getElementById('deleteForm').action = "{{ url_for('delete_channel', channel_id=0) }}".replace('0', channelId);
+        const confirmBtn = document.getElementById('confirmDeleteBtn');
         
-        const deleteModal = new bootstrap.Modal(document.getElementById('deleteModal'));
+        // 移除旧的事件监听器
+        const newConfirmBtn = confirmBtn.cloneNode(true);
+        confirmBtn.parentNode.replaceChild(newConfirmBtn, confirmBtn);
+        
+        // 添加新的事件监听器
+        newConfirmBtn.addEventListener('click', function() {
+            deleteChannel(channelId);
+        });
+        
         deleteModal.show();
     }
     
-    function confirmDeleteAll() {
-        document.getElementById('bulkDeleteTitle').textContent = "确认删除所有频道";
-        document.getElementById('bulkDeleteMessage').textContent = "确定要删除所有频道吗？此操作无法撤销。";
-        document.getElementById('bulkDeleteType').value = "all";
-        document.getElementById('bulkDeleteValue').value = "";
-        document.getElementById('bulkDeleteForm').action = "{{ url_for('bulk_delete') }}";
-        
-        const bulkDeleteModal = new bootstrap.Modal(document.getElementById('bulkDeleteModal'));
-        bulkDeleteModal.show();
-    }
-    
-    function confirmDeleteGroup(groupName) {
-        document.getElementById('bulkDeleteTitle').textContent = "确认删除分组";
-        document.getElementById('bulkDeleteMessage').textContent = `确定要删除"${groupName}"分组中的所有频道吗？此操作无法撤销。`;
-        document.getElementById('bulkDeleteType').value = "group";
-        document.getElementById('bulkDeleteValue').value = groupName;
-        document.getElementById('bulkDeleteForm').action = "{{ url_for('bulk_delete') }}";
-        
-        const bulkDeleteModal = new bootstrap.Modal(document.getElementById('bulkDeleteModal'));
-        bulkDeleteModal.show();
-    }
-    
-    function confirmDeleteByStatus(status) {
-        const statusMap = {
-            'online': '在线',
-            'offline': '离线',
-            'error': '错误',
-            'unknown': '未测试'
-        };
-        
-        document.getElementById('bulkDeleteTitle').textContent = `确认删除${statusMap[status]}频道`;
-        document.getElementById('bulkDeleteMessage').textContent = `确定要删除所有${statusMap[status]}频道吗？此操作无法撤销。`;
-        document.getElementById('bulkDeleteType').value = "status";
-        document.getElementById('bulkDeleteValue').value = status;
-        document.getElementById('bulkDeleteForm').action = "{{ url_for('bulk_delete') }}";
-        
-        const bulkDeleteModal = new bootstrap.Modal(document.getElementById('bulkDeleteModal'));
-        bulkDeleteModal.show();
-    }
-    
-    function filterChannels(status) {
-        // 获取所有频道卡片
-        const channelCards = document.querySelectorAll('.card.h-100');
-        
-        // 遍历所有频道卡片
-        channelCards.forEach(card => {
-            // 获取频道状态
-            const badges = card.querySelectorAll('.badge');
-            let channelStatus = 'unknown';
-            
-            badges.forEach(badge => {
-                if (badge.classList.contains('bg-success')) channelStatus = 'online';
-                else if (badge.classList.contains('bg-danger')) channelStatus = 'offline';
-                else if (badge.classList.contains('bg-warning')) channelStatus = 'error';
-                else if (badge.classList.contains('bg-secondary')) channelStatus = 'unknown';
-            });
-            
-            // 显示或隐藏频道卡片
-            if (status === 'all' || channelStatus === status) {
-                card.closest('.col').style.display = '';
-            } else {
-                card.closest('.col').style.display = 'none';
+    // 删除频道
+    function deleteChannel(channelId) {
+        fetch(`/delete/${channelId}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest'
             }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                showToast(data.message, 'success');
+                deleteModal.hide();
+                loadChannels();
+            } else {
+                showToast(data.error || '删除频道失败', 'danger');
+            }
+        })
+        .catch(error => {
+            console.error('删除频道出错:', error);
+            showToast('删除频道出错: ' + error.message, 'danger');
+        });
+    }
+    
+    // 批量删除频道
+    function bulkDelete(type, value) {
+        if (type === 'all') {
+            if (!confirm('确定要删除所有频道吗？此操作不可恢复！')) {
+                return;
+            }
+        } else if (type === 'status') {
+            if (!confirm(`确定要删除所有${value === 'offline' ? '离线' : '错误'}频道吗？此操作不可恢复！`)) {
+                return;
+            }
+        } else if (type === 'group') {
+            if (!confirm(`确定要删除 ${value} 分组的所有频道吗？此操作不可恢复！`)) {
+                return;
+            }
+        }
+        
+        fetch('/bulk_delete', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest'
+            },
+            body: JSON.stringify({
+                delete_type: type,
+                delete_value: value
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                showToast(data.message, 'success');
+                loadChannels();
+            } else {
+                showToast(data.error || '批量删除频道失败', 'danger');
+            }
+        })
+        .catch(error => {
+            console.error('批量删除频道出错:', error);
+            showToast('批量删除频道出错: ' + error.message, 'danger');
+        });
+    }
+    
+    // 测试频道
+    function testChannel(channelId) {
+        showToast('正在测试频道...', 'info');
+        
+        fetch('/api/test_channel', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest'
+            },
+            body: JSON.stringify({
+                channel_id: channelId
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                showToast(data.message, 'success');
+                
+                // 更新频道状态
+                const statusBadges = document.querySelectorAll(`.channel-card[data-channel-id="${channelId}"] .channel-status-badge`);
+                statusBadges.forEach(badge => {
+                    if (data.channel.status === 'online') {
+                        badge.className = 'badge bg-success';
+                        badge.textContent = '在线';
+                    } else if (data.channel.status === 'offline') {
+                        badge.className = 'badge bg-danger';
+                        badge.textContent = `离线 (${data.channel.status_code || '未知'})`;
+                    } else if (data.channel.status === 'error') {
+                        badge.className = 'badge bg-warning text-dark';
+                        badge.textContent = '错误';
+                        badge.title = data.channel.error || '未知错误';
+                    }
+                });
+                
+                // 如果当前正在筛选状态，可能需要重新加载
+                if (currentStatus !== 'all' && currentStatus !== data.channel.status) {
+                    loadChannels();
+                }
+            } else {
+                showToast(data.error || '测试频道失败', 'danger');
+            }
+        })
+        .catch(error => {
+            console.error('测试频道出错:', error);
+            showToast('测试频道出错: ' + error.message, 'danger');
+        });
+    }
+    
+    // 显示加载指示器
+    function showLoading() {
+        document.getElementById('loading-indicator').style.display = 'block';
+    }
+    
+    // 隐藏加载指示器
+    function hideLoading() {
+        document.getElementById('loading-indicator').style.display = 'none';
+    }
+    
+    // 显示通知
+    function showToast(message, type = 'info') {
+        const toastContainer = document.getElementById('toast-container');
+        const toastId = 'toast-' + Date.now();
+        
+        const toast = document.createElement('div');
+        toast.className = `toast align-items-center text-white bg-${type} border-0`;
+        toast.id = toastId;
+        toast.setAttribute('role', 'alert');
+        toast.setAttribute('aria-live', 'assertive');
+        toast.setAttribute('aria-atomic', 'true');
+        
+        const toastContent = document.createElement('div');
+        toastContent.className = 'd-flex';
+        
+        const toastBody = document.createElement('div');
+        toastBody.className = 'toast-body';
+        toastBody.textContent = message;
+        
+        const closeButton = document.createElement('button');
+        closeButton.type = 'button';
+        closeButton.className = 'btn-close btn-close-white me-2 m-auto';
+        closeButton.setAttribute('data-bs-dismiss', 'toast');
+        closeButton.setAttribute('aria-label', '关闭');
+        
+        toastContent.appendChild(toastBody);
+        toastContent.appendChild(closeButton);
+        toast.appendChild(toastContent);
+        toastContainer.appendChild(toast);
+        
+        const bsToast = new bootstrap.Toast(toast, {
+            autohide: true,
+            delay: 5000
+        });
+        
+        bsToast.show();
+        
+        // 自动移除
+        toast.addEventListener('hidden.bs.toast', function() {
+            toast.remove();
         });
     }
 </script>
