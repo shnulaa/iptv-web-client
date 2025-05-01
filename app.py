@@ -384,6 +384,63 @@ def test_channels_route():
     
     return render_template('test_channels.html', groups=groups)
 
+@app.route('/test_single_channel', methods=['POST'])
+@login_required
+def test_single_channel():
+    """测试单个频道"""
+    channel_id = request.form.get('channel_id')
+    
+    if not channel_id:
+        flash('频道ID不能为空', 'error')
+        return redirect(url_for('index'))
+    
+    try:
+        channel_id = int(channel_id)
+        channels = load_channels()
+        
+        if 0 <= channel_id < len(channels):
+            channel = channels[channel_id]
+            
+            # 测试频道
+            start_time = time.time()
+            result = test_channel_url(channel['url'])
+            end_time = time.time()
+            
+            # 更新频道状态
+            channel['status'] = result['status']
+            if 'status_code' in result:
+                channel['status_code'] = result['status_code']
+            if 'error' in result:
+                channel['error'] = result['error']
+            
+            # 保存更新后的频道列表
+            save_channels(channels)
+            
+            # 计算测试耗时
+            test_time = end_time - start_time
+            
+            # 显示测试结果
+            status_map = {
+                'online': '在线',
+                'offline': '离线',
+                'error': '错误'
+            }
+            
+            status_text = status_map.get(result['status'], result['status'])
+            
+            if result['status'] == 'online':
+                flash(f'频道 "{channel["name"]}" 测试完成，状态: {status_text}，耗时: {test_time:.2f}秒', 'success')
+            elif result['status'] == 'offline':
+                flash(f'频道 "{channel["name"]}" 测试完成，状态: {status_text}，状态码: {result.get("status_code", "未知")}，耗时: {test_time:.2f}秒', 'warning')
+            else:
+                flash(f'频道 "{channel["name"]}" 测试完成，状态: {status_text}，错误: {result.get("error", "未知错误")}，耗时: {test_time:.2f}秒', 'danger')
+        else:
+            flash('频道不存在', 'error')
+    except Exception as e:
+        flash(f'测试频道时出错: {str(e)}', 'error')
+    
+    return redirect(url_for('index'))
+
 @app.route('/test_status/<task_id>')
 @login_required
 def test_status(task_id):

@@ -87,19 +87,27 @@
                                                     <span class="badge bg-secondary">未测试</span>
                                                     {% endif %}
                                                 </div>
-                                                <div class="card-footer d-flex justify-content-between">
-                                                    <a href="{{ url_for('play', channel_id=channel.global_id) }}" class="btn btn-primary btn-sm">
-                                                        <i class="bi bi-play-fill"></i> 播放
-                                                    </a>
-                                                    <div class="btn-group">
-                                                        <a href="{{ url_for('edit_channel', channel_id=channel.global_id) }}" class="btn btn-outline-secondary btn-sm">
-                                                            <i class="bi bi-pencil"></i>
+                                                <div class="card-footer">
+                                                    <div class="d-flex justify-content-between mb-2">
+                                                        <a href="{{ url_for('play', channel_id=channel.global_id) }}" class="btn btn-primary btn-sm">
+                                                            <i class="bi bi-play-fill"></i> 播放
                                                         </a>
-                                                        <button type="button" class="btn btn-outline-danger btn-sm" 
-                                                                onclick="confirmDelete({{ channel.global_id }}, '{{ channel.name }}')">
-                                                            <i class="bi bi-trash"></i>
-                                                        </button>
+                                                        <div class="btn-group">
+                                                            <a href="{{ url_for('edit_channel', channel_id=channel.global_id) }}" class="btn btn-outline-secondary btn-sm">
+                                                                <i class="bi bi-pencil"></i>
+                                                            </a>
+                                                            <button type="button" class="btn btn-outline-danger btn-sm" 
+                                                                    onclick="confirmDelete({{ channel.global_id }}, '{{ channel.name }}')">
+                                                                <i class="bi bi-trash"></i>
+                                                            </button>
+                                                        </div>
                                                     </div>
+                                                    <form action="{{ url_for('test_single_channel') }}" method="post" class="d-grid">
+                                                        <input type="hidden" name="channel_id" value="{{ channel.global_id }}">
+                                                        <button type="submit" class="btn btn-outline-info btn-sm">
+                                                            <i class="bi bi-check-circle"></i> 测试频道
+                                                        </button>
+                                                    </form>
                                                 </div>
                                             </div>
                                         </div>
